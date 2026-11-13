@@ -28,9 +28,9 @@ const env = {
   mongoUri: process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/assignment_bridge',
   jwtSecret: process.env.JWT_SECRET || 'dev-only-secret-change-me',
   jwtExpires: process.env.JWT_EXPIRES || '7d',
-  clientUrls: (process.env.CLIENT_URL || 'http://localhost:5173')
+    clientUrls: (process.env.CLIENT_URL || 'http://localhost:5173')
     .split(',')
-    .map((s) => s.trim())
+    .map((s) => s.trim().replace(/\/+$/, '').toLowerCase())
     .filter(Boolean),
   serverUrl: (process.env.SERVER_URL || `http://localhost:${port}`).replace(/\/$/, ''),
 
