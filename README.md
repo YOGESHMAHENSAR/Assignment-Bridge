@@ -17,7 +17,7 @@ Tasker pays ₹100 ──► held by platform ──► Worker finishes ──�
 | | Tasker | Worker | Admin |
 |---|---|---|---|
 | Register themselves | yes | yes | no (seeded) |
-| Post requests with file upload | yes | no | no |
+| Post requests with a required PDF attachment | yes | no | no |
 | Pay via Razorpay | yes | no | no |
 | See open tasks and their files/details | no | yes | yes |
 | Accept / ignore / give back a task | no | yes | no |
@@ -128,6 +128,7 @@ client/src
 
 - Auth: `POST /auth/register`, `POST /auth/login`, `GET /auth/me`, `PUT /auth/profile`
 - Tasker: `POST /tasks` (multipart), `GET /tasks/mine`, `POST /tasks/:id/order`, `/verify-payment`, `/cancel`, `/approve`, `/revision`
+- Tasker can edit unpaid or open/unassigned requests with `PUT /tasks/:id` (multipart); at least one PDF must remain attached.
 - Worker: `GET /tasks/available`, `GET /tasks/assigned`, `POST /tasks/:id/accept|ignore|release|submit`, `GET /wallet`, `POST /wallet/payouts`
 - Shared: `GET /tasks/:id` (visibility depends on role)
 - Admin: `GET /admin/stats|users|tasks|payouts`, `PATCH /admin/users/:id/block`, `POST /admin/tasks/:id/cancel`, `PATCH /admin/payouts/:id`

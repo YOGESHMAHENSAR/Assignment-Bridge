@@ -44,6 +44,7 @@ const taskers = [protect, authorize('tasker')];
 const workers = [protect, authorize('worker')];
 
 router.post('/tasks', ...taskers, uploadFiles, tasks.createTask);
+router.put('/tasks/:id', ...taskers, uploadFiles, tasks.updateTask);
 router.get('/tasks/mine', ...taskers, tasks.myTasks);
 router.get('/tasks/available', ...workers, tasks.availableTasks);
 router.get('/tasks/assigned', ...workers, tasks.assignedTasks);

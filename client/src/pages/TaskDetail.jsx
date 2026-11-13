@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { FileDropzone, FileList, Loading, StatusBadge, Stars, Empty } from '../components/ui';
 import { dateTime, deadlineInfo, money } from '../utils/format';
+import { hasPdfFile } from '../utils/files';
 import { payForTask } from '../utils/payment';
 
 const TEXT = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
@@ -67,6 +68,8 @@ export default function TaskDetail() {
   const dl = deadlineInfo(task.deadline);
   const submissions = task.submissions || [];
   const latest = submissions[submissions.length - 1];
+  const hasAssignmentPdf = hasPdfFile(task.files);
+  const canEditRequest = isTasker && ['pending_payment', 'open'].includes(task.status) && !task.worker;
 
   /* ---- actions ---- */
   const payNow = () =>
@@ -263,6 +266,15 @@ export default function TaskDetail() {
           <section className="card side-card actions">
             <h3>Actions</h3>
 
+            {canEditRequest && (
+              <>
+                {!hasAssignmentPdf && <p className="alert alert-info">Add the required PDF before this request can be paid or accepted.</p>}
+                <Link to={`/tasks/${task._id}/edit`} className="btn btn-outline btn-block">
+                  {hasAssignmentPdf ? 'Edit request' : 'Add PDF & edit request'}
+                </Link>
+              </>
+            )}
+
             {isTasker && task.status === 'pending_payment' && (
               <>
                 <p className="muted small">Workers can't see this request until it's paid.</p>
@@ -278,14 +290,16 @@ export default function TaskDetail() {
             )}
 
             {isWorker && task.status === 'open' && !mineAsWorker && (
-              <>
-                <button className="btn btn-primary btn-block" disabled={busy} onClick={accept}>
-                  Accept task
-                </button>
-                <button className="btn btn-ghost btn-block" disabled={busy} onClick={ignore}>
-                  Ignore
-                </button>
-              </>
+              hasAssignmentPdf ? (
+                <>
+                  <button className="btn btn-primary btn-block" disabled={busy} onClick={accept}>
+                    Accept task
+                  </button>
+                  <button className="btn btn-ghost btn-block" disabled={busy} onClick={ignore}>
+                    Ignore
+                  </button>
+                </>
+              ) : <p className="muted small">The tasker must attach a PDF before this request can be accepted.</p>
             )}
             {mineAsWorker && task.status === 'accepted' && (
               <button className="btn btn-outline-danger btn-block" disabled={busy} onClick={release}>

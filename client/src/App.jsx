@@ -8,6 +8,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Profile from './pages/Profile';
 import TaskDetail from './pages/TaskDetail';
+import EditTask from './pages/tasker/EditTask';
 import NotFound from './pages/NotFound';
 
 import TaskerDashboard from './pages/tasker/Dashboard';
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/tasks/:id" element={<TaskDetail />} />
+        <Route path="/tasks/:id/edit" element={only(['tasker'], <EditTask />)} />
 
         <Route path="/new" element={only(['tasker'], <NewTask />)} />
 

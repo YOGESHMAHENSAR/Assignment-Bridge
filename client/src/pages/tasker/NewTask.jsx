@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { FileDropzone } from '../../components/ui';
 import { money, toDatetimeLocal } from '../../utils/format';
+import { hasPdfFile } from '../../utils/files';
 import { payForTask } from '../../utils/payment';
 
 export default function NewTask() {
@@ -17,11 +18,16 @@ export default function NewTask() {
   const [error, setError] = useState('');
 
   const price = config?.price ?? 100;
+  const hasAssignmentPdf = hasPdfFile(files);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   const submit = async (e) => {
     e.preventDefault();
     setError('');
+    if (!hasAssignmentPdf) {
+      setError('Attach at least one PDF assignment file before continuing.');
+      return;
+    }
     setBusy(true);
 
     let created;
@@ -89,7 +95,8 @@ export default function NewTask() {
         </label>
 
         <div className="field">
-          <span>Attach files</span>
+          <span>Assignment files *</span>
+          <small className="muted">At least one PDF is required. You can also attach other allowed file types.</small>
           <FileDropzone files={files} onChange={setFiles} maxFiles={config?.maxFiles} maxFileMb={config?.maxFileMb} disabled={busy} />
         </div>
 
@@ -98,7 +105,7 @@ export default function NewTask() {
             <strong>{money(price)}</strong> per assignment
             <small>Held securely until you approve the finished work. Cancel any time before a worker accepts for a full refund.</small>
           </div>
-          <button className="btn btn-primary btn-lg" disabled={busy}>
+          <button className="btn btn-primary btn-lg" disabled={busy || !hasAssignmentPdf}>
             {busy ? 'Please wait…' : `Post & pay ${money(price)}`}
           </button>
         </div>

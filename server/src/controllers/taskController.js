@@ -14,6 +14,8 @@ import {
 import { storeFiles, removeFiles } from '../services/storage.js';
 import { createOrder, verifyPayment } from '../services/payments.js';
 import { cancelTaskWithRefund } from '../services/taskCancel.js';
+import { MAX_FILES } from '../middleware/upload.js';
+import { hasPdfFile, pdfFileQuery } from '../utils/taskFiles.js';
 
 /* ------------------------------------------------------------------ */
 /* Role-aware field visibility                                         */
@@ -50,6 +52,7 @@ export const createTask = asyncHandler(async (req, res) => {
   if (deadline && (Number.isNaN(deadline.getTime()) || deadline <= new Date())) {
     throw new ApiError(400, 'Deadline must be a valid time in the future');
   }
+  if (!hasPdfFile(req.files)) throw new ApiError(400, 'Attach at least one PDF assignment file');
 
   const files = await storeFiles(req.files, 'requests');
 
@@ -81,6 +84,93 @@ export const createTask = asyncHandler(async (req, res) => {
   }
 });
 
+export const updateTask = asyncHandler(async (req, res) => {
+  assertObjectId(req.params.id);
+  const task = await Task.findOne({ _id: req.params.id, tasker: req.user._id });
+  if (!task) throw new ApiError(404, 'Task not found');
+  if (!['pending_payment', 'open'].includes(task.status) || task.worker) {
+    throw new ApiError(409, 'You can only edit a request before a worker accepts it');
+  }
+
+  const title = cleanString(req.body.title, 120);
+  const description = cleanString(req.body.description, 5000);
+  const subject = cleanString(req.body.subject, 60);
+  const additionalInfo = cleanString(req.body.additionalInfo, 3000);
+  const pages = req.body.pages !== undefined && req.body.pages !== '' ? Number(req.body.pages) : undefined;
+  const deadline = req.body.deadline ? new Date(req.body.deadline) : undefined;
+
+  if (!title) throw new ApiError(400, 'Give the assignment a title');
+  if (!description) throw new ApiError(400, 'Tell the worker what needs to be done');
+  if (pages !== undefined && (!Number.isFinite(pages) || pages < 0)) throw new ApiError(400, 'Pages must be a positive number');
+  if (deadline && (Number.isNaN(deadline.getTime()) || deadline <= new Date())) {
+    throw new ApiError(400, 'Deadline must be a valid time in the future');
+  }
+
+  let removeUrls = [];
+  if (req.body.removeFileUrls) {
+    try {
+      removeUrls = JSON.parse(req.body.removeFileUrls);
+    } catch {
+      throw new ApiError(400, 'Invalid file removal request');
+    }
+    if (!Array.isArray(removeUrls) || removeUrls.some((url) => typeof url !== 'string')) {
+      throw new ApiError(400, 'Invalid file removal request');
+    }
+  }
+
+  const removeSet = new Set(removeUrls);
+  if (
+    removeSet.size !== removeUrls.length ||
+    [...removeSet].some((url) => !task.files.some((file) => file.url === url))
+  ) {
+    throw new ApiError(400, 'One or more selected files do not belong to this request');
+  }
+
+  const removedFiles = task.files.filter((file) => removeSet.has(file.url));
+  const keptFiles = task.files.filter((file) => !removeSet.has(file.url));
+  const incomingFiles = req.files || [];
+  if (keptFiles.length + incomingFiles.length > MAX_FILES) {
+    throw new ApiError(400, `You can attach at most ${MAX_FILES} files`);
+  }
+  if (!hasPdfFile([...keptFiles, ...incomingFiles])) {
+    throw new ApiError(400, 'Keep or upload at least one PDF assignment file');
+  }
+
+  const uploadedFiles = await storeFiles(incomingFiles, 'requests');
+  const fields = { title, subject, description, additionalInfo, files: [...keptFiles, ...uploadedFiles] };
+  const unset = {};
+  if (pages === undefined) unset.pages = 1;
+  else fields.pages = pages;
+  if (!deadline) unset.deadline = 1;
+  else fields.deadline = deadline;
+
+  let updatedTask;
+  try {
+    updatedTask = await Task.findOneAndUpdate(
+      {
+        _id: task._id,
+        tasker: req.user._id,
+        status: { $in: ['pending_payment', 'open'] },
+        worker: null,
+        updatedAt: task.updatedAt,
+      },
+      { $set: fields, ...(Object.keys(unset).length ? { $unset: unset } : {}) },
+      { new: true, runValidators: true }
+    );
+  } catch (err) {
+    await removeFiles(uploadedFiles);
+    throw err;
+  }
+
+  if (!updatedTask) {
+    await removeFiles(uploadedFiles);
+    throw new ApiError(409, 'This request changed while you were editing. Reload and try again.');
+  }
+
+  await removeFiles(removedFiles);
+  res.json({ task: updatedTask });
+});
+
 const toClientOrder = (order) => ({
   id: order.id,
   amount: order.amount,
@@ -95,6 +185,7 @@ export const retryPayment = asyncHandler(async (req, res) => {
   const task = await Task.findOne({ _id: req.params.id, tasker: req.user._id });
   if (!task) throw new ApiError(404, 'Task not found');
   if (task.status !== 'pending_payment') throw new ApiError(409, 'This task is already paid');
+  if (!hasPdfFile(task.files)) throw new ApiError(409, 'Attach a PDF assignment file before continuing to payment');
 
   const order = await createOrder(task);
   task.payment.orderId = order.id;
@@ -117,6 +208,7 @@ export const verifyTaskPayment = asyncHandler(async (req, res) => {
     if (task.payment.paymentId && task.payment.paymentId === paymentId) return res.json({ task });
     throw new ApiError(409, 'This task is not awaiting payment');
   }
+  if (!hasPdfFile(task.files)) throw new ApiError(409, 'Attach a PDF assignment file before continuing to payment');
   if (!task.payment.orderIds.includes(orderId)) throw new ApiError(400, 'Order does not match this task');
   if (!verifyPayment({ orderId, paymentId, signature })) {
     throw new ApiError(400, 'Payment verification failed');
@@ -178,6 +270,7 @@ export const availableTasks = asyncHandler(async (req, res) => {
     status: 'open',
     tasker: { $ne: req.user._id },
     ignoredBy: { $ne: req.user._id },
+    ...pdfFileQuery(),
   };
   const search = cleanString(req.query.search, 60);
   if (search) {
@@ -240,7 +333,7 @@ export const acceptTask = asyncHandler(async (req, res) => {
 
   // Atomic: only one worker can win the task.
   const task = await Task.findOneAndUpdate(
-    { _id: req.params.id, status: 'open', tasker: { $ne: req.user._id } },
+    { _id: req.params.id, status: 'open', tasker: { $ne: req.user._id }, ...pdfFileQuery() },
     { status: 'accepted', worker: req.user._id, acceptedAt: new Date() },
     { new: true }
   );
