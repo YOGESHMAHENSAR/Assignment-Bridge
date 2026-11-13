@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { FileDropzone, Loading } from '../../components/ui';
 import { fileSize, toDatetimeLocal } from '../../utils/format';
 import { hasPdfFile } from '../../utils/files';
+import LocationFields from '../../components/LocationFields';
 
 export default function EditTask() {
   const { id } = useParams();
@@ -28,6 +29,11 @@ export default function EditTask() {
           deadline: data.task.deadline ? toDatetimeLocal(new Date(data.task.deadline)) : '',
           description: data.task.description || '',
           additionalInfo: data.task.additionalInfo || '',
+          workLocation: {
+            name: data.task.workLocation?.name || '',
+            latitude: data.task.workLocation?.point?.coordinates?.[1]?.toString() || '',
+            longitude: data.task.workLocation?.point?.coordinates?.[0]?.toString() || '',
+          },
         });
       })
       .catch((err) => setError(errMsg(err)));
@@ -72,6 +78,7 @@ export default function EditTask() {
       body.append('deadline', form.deadline ? new Date(form.deadline).toISOString() : '');
       body.append('description', form.description);
       body.append('additionalInfo', form.additionalInfo);
+      body.append('workLocation', JSON.stringify(form.workLocation));
       body.append('removeFileUrls', JSON.stringify(removedUrls));
       files.forEach((file) => body.append('files', file));
       await api.put(`/tasks/${id}`, body);
@@ -123,6 +130,13 @@ export default function EditTask() {
           <span>Additional information</span>
           <textarea rows={4} maxLength={3000} value={form.additionalInfo} onChange={set('additionalInfo')} />
         </label>
+
+        <LocationFields
+          value={form.workLocation}
+          onChange={(workLocation) => setForm({ ...form, workLocation })}
+          title="Where the work is located"
+          disabled={busy}
+        />
 
         <div className="field">
           <span>Current attachments</span>

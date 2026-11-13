@@ -4,6 +4,7 @@ A marketplace that connects two kinds of users:
 
 - **Tasker**: posts an assignment request (instructions, files, deadline) and pays **₹100**.
 - **Worker**: browses open requests, **accepts or ignores** them, uploads the finished work, and earns **₹50** when the tasker approves it.
+- Requests are matched to workers within **2 km** of the worker's registered campus location. Both account and task locations use a campus name and coordinates.
 - **Admin**: sees every user, task and rupee. The platform keeps the remaining **₹50** per completed task.
 
 ```
@@ -19,8 +20,9 @@ Tasker pays ₹100 ──► held by platform ──► Worker finishes ──�
 | Register themselves | yes | yes | no (seeded) |
 | Post requests with a required PDF attachment | yes | no | no |
 | Pay via Razorpay | yes | no | no |
-| See open tasks and their files/details | no | yes | yes |
+| See open tasks and their files/details | no | within 2 km of registered campus | yes |
 | Accept / ignore / give back a task | no | yes | no |
+| Chat with the other participant | after a worker accepts | after accepting a task | no |
 | Upload finished work | no | yes | no |
 | Approve work, request changes, rate worker | yes (own tasks) | no | no |
 | Cancel a request (full refund) before it is accepted | yes (own) | no | yes (any) |
@@ -38,6 +40,7 @@ Privacy by role: workers never see what the tasker paid or the platform's cut; t
 &nbsp;&nbsp;&nbsp;&nbsp;↳ `open` or `pending_payment` tasks can be `cancelled` (paid ones are refunded)
 
 Accepting is atomic, so two workers can never take the same task.
+Task chat starts after acceptance, remains available through submissions and revisions, and becomes read-only when the task is approved or otherwise closed.
 
 ## Quick start
 
@@ -83,6 +86,13 @@ CLOUDINARY_API_SECRET=...
 ```
 > New Cloudinary accounts block delivery of PDF and ZIP files by default. Enable it in **Settings → Security → "PDF and ZIP files delivery"**, otherwise those links return 401.
 
+**Real-time chat and push notifications**: Chat messages are delivered over Socket.IO. Browser push notifications require VAPID keys:
+```bash
+cd server
+npx web-push generate-vapid-keys
+```
+Copy the generated public and private keys into `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` in `server/.env`. Keep the private key secret and stable. Set `VAPID_SUBJECT` to a contact email or URL. Users must click **Enable notifications** in the app and allow browser notifications. Web Push requires HTTPS in production (localhost is allowed for development).
+
 ### Configuration (`server/.env`)
 
 | Variable | Default | Meaning |
@@ -93,6 +103,8 @@ CLOUDINARY_API_SECRET=...
 | `MAX_REVISIONS` | 3 | Revision rounds a tasker can request |
 | `MIN_PAYOUT` | 50 | Smallest withdrawal (₹) |
 | `JWT_SECRET` | dev value | **Set a long random value in production** |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | empty | Enables browser push notifications when both are set |
+| `VAPID_SUBJECT` | `mailto:admin@example.com` | Contact identifier required by Web Push |
 
 Prices are snapshotted on each task when it is created, so changing them later does not affect existing tasks.
 
@@ -111,9 +123,9 @@ Later you can replace step 3 with RazorpayX Payouts by calling it from `processP
 ```
 server/src
   config/        env, db
-  models/        User, Task, Transaction (ledger), Payout
+  models/        User, Task, Message, PushSubscription, Transaction (ledger), Payout
   middleware/    auth (JWT + roles), upload (multer), error
-  services/      storage (Cloudinary/local), payments (Razorpay), taskCancel (refund)
+  services/      storage (Cloudinary/local), payments (Razorpay), taskCancel (refund), Socket.IO, Web Push
   controllers/   auth, task, wallet, admin
   routes/index.js  all endpoints
   seed.js        creates the admin
@@ -130,17 +142,20 @@ client/src
 - Tasker: `POST /tasks` (multipart), `GET /tasks/mine`, `POST /tasks/:id/order`, `/verify-payment`, `/cancel`, `/approve`, `/revision`
 - Tasker can edit unpaid or open/unassigned requests with `PUT /tasks/:id` (multipart); at least one PDF must remain attached.
 - Worker: `GET /tasks/available`, `GET /tasks/assigned`, `POST /tasks/:id/accept|ignore|release|submit`, `GET /wallet`, `POST /wallet/payouts`
+- Chat: `GET|POST /tasks/:id/messages` (only the tasker and currently assigned worker; sending is allowed while the task is active)
+- Notifications: `GET /notifications/vapid-public-key`, `POST|DELETE /notifications/subscribe` (authenticated push subscription management)
 - Shared: `GET /tasks/:id` (visibility depends on role)
 - Admin: `GET /admin/stats|users|tasks|payouts`, `PATCH /admin/users/:id/block`, `POST /admin/tasks/:id/cancel`, `PATCH /admin/payouts/:id`
 
 ## Deploying
 
-1. Set `NODE_ENV=production`, a strong `JWT_SECRET`, real Razorpay + Cloudinary keys, `CLIENT_URL` (your site) and `MONGO_URI` (Atlas).
-2. Frontend: `cd client && npm run build`, host `client/dist` anywhere static. If the API is on another domain, set `VITE_API_URL=https://api.yourdomain.com/api` before building.
+1. Set `NODE_ENV=production`, a strong `JWT_SECRET`, real Razorpay + Cloudinary keys, VAPID keys, `CLIENT_URL` (your site) and `MONGO_URI` (Atlas).
+2. Frontend: `cd client && npm run build`, host `client/dist` anywhere static. If the API is on another domain, set `VITE_API_URL=https://api.yourdomain.com/api` before building. Configure the reverse proxy to forward `/socket.io` WebSocket traffic to the API; set `VITE_SOCKET_URL` if it is served from a different origin.
 3. Backend: run `node src/server.js` on any Node host. Run `npm run seed` once.
 
 ## Before you launch: read this
 
 - **Academic integrity and payment rules.** Platforms where students pay others to complete graded coursework are restricted or illegal in some countries (several ban "contract cheating" services), many schools and universities prohibit it, and payment providers (including Razorpay) often restrict this kind of business. Check Razorpay's prohibited-business policy and local law first. Many marketplaces reduce risk by framing the service as tutoring, notes, or model answers for learning, and by publishing clear terms of use.
-- **Not yet built (good next steps):** Razorpay webhook as a backup to client-side verification (covers a tasker closing the tab right after paying), email/SMS notifications, in-task chat, dispute handling for rejected work, auto-approval after N days, and MongoDB transactions for the approve-and-credit step (needs a replica set; Atlas has one).
+- **Not yet built (good next steps):** Razorpay webhook as a backup to client-side verification (covers a tasker closing the tab right after paying), email/SMS notifications, dispute handling for rejected work, auto-approval after N days, and MongoDB transactions for the approve-and-credit step (needs a replica set; Atlas has one).
 - Uploaded files are served from unguessable URLs but are not access-controlled. For stricter privacy use Cloudinary "authenticated" delivery with signed URLs.
+- Account registration requires a campus name and coordinates; taskers provide the work location when posting a request. The browser's location button is optional, and coordinates can be entered manually. The server filters nearby requests and checks the distance again on acceptance; exact task coordinates are not returned to clients.

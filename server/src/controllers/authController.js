@@ -3,6 +3,7 @@ import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { cleanString } from '../utils/helpers.js';
 import { signToken } from '../middleware/auth.js';
+import { normalizeLocation } from '../utils/location.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -14,6 +15,7 @@ export const register = asyncHandler(async (req, res) => {
   const password = typeof req.body.password === 'string' ? req.body.password : '';
   const role = req.body.role;
   const phone = cleanString(req.body.phone, 20);
+  const location = normalizeLocation(req.body.location, 'Campus location');
 
   if (!name) throw new ApiError(400, 'Name is required');
   if (!EMAIL_RE.test(email)) throw new ApiError(400, 'Enter a valid email address');
@@ -24,7 +26,7 @@ export const register = asyncHandler(async (req, res) => {
   }
   if (await User.exists({ email })) throw new ApiError(409, 'An account with this email already exists');
 
-  const user = await User.create({ name, email, password, role, phone });
+  const user = await User.create({ name, email, password, role, phone, location });
   res.status(201).json(authResponse(user));
 });
 
@@ -55,6 +57,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
   }
   if (req.body.phone !== undefined) user.phone = cleanString(req.body.phone, 20);
   if (req.body.upiId !== undefined) user.upiId = cleanString(req.body.upiId, 80);
+  if (req.body.location !== undefined) user.location = normalizeLocation(req.body.location, 'Campus location');
 
   if (req.body.newPassword) {
     if (req.body.newPassword.length < 6) throw new ApiError(400, 'New password must be at least 6 characters');

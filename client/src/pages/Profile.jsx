@@ -2,6 +2,7 @@ import { useState } from 'react';
 import api, { errMsg } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import LocationFields from '../components/LocationFields';
 
 export default function Profile() {
   const { user, setUser } = useAuth();
@@ -10,6 +11,11 @@ export default function Profile() {
     name: user.name,
     phone: user.phone || '',
     upiId: user.upiId || '',
+    location: {
+      name: user.location?.name || '',
+      latitude: user.location?.point?.coordinates?.[1]?.toString() || '',
+      longitude: user.location?.point?.coordinates?.[0]?.toString() || '',
+    },
     currentPassword: '',
     newPassword: '',
   });
@@ -20,7 +26,7 @@ export default function Profile() {
     e.preventDefault();
     setBusy(true);
     try {
-      const payload = { name: form.name, phone: form.phone };
+      const payload = { name: form.name, phone: form.phone, location: form.location };
       if (user.role === 'worker') payload.upiId = form.upiId;
       if (form.newPassword) Object.assign(payload, { currentPassword: form.currentPassword, newPassword: form.newPassword });
       const { data } = await api.put('/auth/profile', payload);
@@ -50,6 +56,11 @@ export default function Profile() {
           <span>Phone</span>
           <input value={form.phone} onChange={set('phone')} />
         </label>
+        <LocationFields
+          value={form.location}
+          onChange={(location) => setForm({ ...form, location })}
+          title="Your campus location"
+        />
         {user.role === 'worker' && (
           <label className="field">
             <span>UPI ID for withdrawals</span>

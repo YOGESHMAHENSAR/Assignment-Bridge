@@ -5,8 +5,10 @@ import { protect, authorize } from '../middleware/auth.js';
 import { uploadFiles, MAX_FILE_MB, MAX_FILES } from '../middleware/upload.js';
 import * as auth from '../controllers/authController.js';
 import * as tasks from '../controllers/taskController.js';
+import * as chat from '../controllers/chatController.js';
 import * as wallet from '../controllers/walletController.js';
 import * as admin from '../controllers/adminController.js';
+import * as notifications from '../controllers/notificationController.js';
 
 const router = Router();
 
@@ -38,6 +40,9 @@ router.post('/auth/register', authLimiter, auth.register);
 router.post('/auth/login', authLimiter, auth.login);
 router.get('/auth/me', protect, auth.me);
 router.put('/auth/profile', protect, auth.updateProfile);
+router.get('/notifications/vapid-public-key', notifications.getVapidPublicKey);
+router.post('/notifications/subscribe', protect, notifications.subscribe);
+router.delete('/notifications/subscribe', protect, notifications.unsubscribe);
 
 /* Tasks ------------------------------------------------------------- */
 const taskers = [protect, authorize('tasker')];
@@ -50,6 +55,8 @@ router.get('/tasks/available', ...workers, tasks.availableTasks);
 router.get('/tasks/assigned', ...workers, tasks.assignedTasks);
 
 router.get('/tasks/:id', protect, tasks.getTask); // role-aware inside
+router.get('/tasks/:id/messages', protect, chat.listMessages);
+router.post('/tasks/:id/messages', protect, chat.sendMessage);
 
 // tasker
 router.post('/tasks/:id/order', ...taskers, tasks.retryPayment);

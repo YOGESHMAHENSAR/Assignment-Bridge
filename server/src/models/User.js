@@ -1,6 +1,29 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
+const locationSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true, maxlength: 120 },
+    point: {
+      type: {
+        type: String,
+        enum: ['Point'],
+        required: true,
+        default: 'Point',
+      },
+      coordinates: {
+        type: [Number],
+        required: true,
+        validate: {
+          validator: (coordinates) => coordinates.length === 2,
+          message: 'Location coordinates must contain longitude and latitude',
+        },
+      },
+    },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 80 },
@@ -9,6 +32,7 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: ['admin', 'tasker', 'worker'], required: true },
     phone: { type: String, trim: true, maxlength: 20 },
     upiId: { type: String, trim: true, maxlength: 80 },
+    location: { type: locationSchema, required: false },
     isBlocked: { type: Boolean, default: false },
 
     // Worker earnings (rupees)

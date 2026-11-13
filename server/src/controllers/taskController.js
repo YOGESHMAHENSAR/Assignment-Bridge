@@ -16,6 +16,9 @@ import { createOrder, verifyPayment } from '../services/payments.js';
 import { cancelTaskWithRefund } from '../services/taskCancel.js';
 import { MAX_FILES } from '../middleware/upload.js';
 import { hasPdfFile, pdfFileQuery } from '../utils/taskFiles.js';
+import { hasLocationPoint, isWithinTaskRadius, normalizeLocation, taskRadiusQuery } from '../utils/location.js';
+import { emitToTaskRoom } from '../services/realtime.js';
+import { notifyUser } from '../services/notifications.js';
 
 /* ------------------------------------------------------------------ */
 /* Role-aware field visibility                                         */
@@ -45,6 +48,7 @@ export const createTask = asyncHandler(async (req, res) => {
   const additionalInfo = cleanString(req.body.additionalInfo, 3000);
   const pages = req.body.pages !== undefined && req.body.pages !== '' ? Number(req.body.pages) : undefined;
   const deadline = req.body.deadline ? new Date(req.body.deadline) : undefined;
+  const workLocation = normalizeLocation(req.body.workLocation, 'Work location');
 
   if (!title) throw new ApiError(400, 'Give the assignment a title');
   if (!description) throw new ApiError(400, 'Tell the worker what needs to be done');
@@ -65,6 +69,7 @@ export const createTask = asyncHandler(async (req, res) => {
       pages,
       deadline,
       files,
+      workLocation,
       tasker: req.user._id,
       price: env.taskPrice,
       workerEarning: env.workerEarning,
@@ -98,6 +103,7 @@ export const updateTask = asyncHandler(async (req, res) => {
   const additionalInfo = cleanString(req.body.additionalInfo, 3000);
   const pages = req.body.pages !== undefined && req.body.pages !== '' ? Number(req.body.pages) : undefined;
   const deadline = req.body.deadline ? new Date(req.body.deadline) : undefined;
+  const workLocation = normalizeLocation(req.body.workLocation, 'Work location');
 
   if (!title) throw new ApiError(400, 'Give the assignment a title');
   if (!description) throw new ApiError(400, 'Tell the worker what needs to be done');
@@ -137,7 +143,7 @@ export const updateTask = asyncHandler(async (req, res) => {
   }
 
   const uploadedFiles = await storeFiles(incomingFiles, 'requests');
-  const fields = { title, subject, description, additionalInfo, files: [...keptFiles, ...uploadedFiles] };
+  const fields = { title, subject, description, additionalInfo, files: [...keptFiles, ...uploadedFiles], workLocation };
   const unset = {};
   if (pages === undefined) unset.pages = 1;
   else fields.pages = pages;
@@ -271,6 +277,7 @@ export const availableTasks = asyncHandler(async (req, res) => {
     tasker: { $ne: req.user._id },
     ignoredBy: { $ne: req.user._id },
     ...pdfFileQuery(),
+    ...taskRadiusQuery(req.user.location),
   };
   const search = cleanString(req.query.search, 60);
   if (search) {
@@ -313,6 +320,9 @@ export const getTask = asyncHandler(async (req, res) => {
     const mine = sameId(task.worker, user._id);
     if (!mine && task.status !== 'open') throw new ApiError(403, 'This task is no longer available');
     if (!mine && sameId(task.tasker, user._id)) throw new ApiError(403, 'You cannot work on your own task');
+    if (!mine && !isWithinTaskRadius(user.location, task.workLocation)) {
+      throw new ApiError(403, 'This request is outside your 2 km campus work radius');
+    }
   }
 
   res.json({ task });
@@ -323,6 +333,9 @@ export const getTask = asyncHandler(async (req, res) => {
 /* ------------------------------------------------------------------ */
 export const acceptTask = asyncHandler(async (req, res) => {
   assertObjectId(req.params.id);
+  if (!hasLocationPoint(req.user.location)) {
+    throw new ApiError(400, 'Add your campus location in your profile before accepting nearby requests');
+  }
   const active = await Task.countDocuments({
     worker: req.user._id,
     status: { $in: ['accepted', 'revision'] },
@@ -331,15 +344,39 @@ export const acceptTask = asyncHandler(async (req, res) => {
     throw new ApiError(409, `You can work on at most ${env.maxActiveTasksPerWorker} tasks at a time. Submit one first.`);
   }
 
+  const candidate = await Task.findOne({
+    _id: req.params.id,
+    status: 'open',
+    tasker: { $ne: req.user._id },
+    ...pdfFileQuery(),
+  });
+  if (!candidate) throw new ApiError(409, 'Sorry, this task is no longer available');
+  if (!isWithinTaskRadius(req.user.location, candidate.workLocation)) {
+    throw new ApiError(403, 'This request is outside your 2 km campus work radius');
+  }
+
   // Atomic: only one worker can win the task.
   const task = await Task.findOneAndUpdate(
-    { _id: req.params.id, status: 'open', tasker: { $ne: req.user._id }, ...pdfFileQuery() },
+    {
+      _id: req.params.id,
+      status: 'open',
+      tasker: { $ne: req.user._id },
+      ...pdfFileQuery(),
+      ...taskRadiusQuery(req.user.location),
+    },
     { status: 'accepted', worker: req.user._id, acceptedAt: new Date() },
     { new: true }
   );
   if (!task) throw new ApiError(409, 'Sorry, this task is no longer available');
 
   const full = await withUsers(Task.findById(task._id).select(HIDDEN_FIELDS.worker));
+  notifyUser(full.tasker._id, {
+    type: 'task_accepted',
+    title: 'Your request was accepted',
+    body: `${full.worker.name} accepted "${full.title}"`,
+    url: `/tasks/${full._id}`,
+    tag: `task-accepted-${full._id}`,
+  }).catch((error) => console.error('Could not send task acceptance notification', error.message));
   res.json({ task: full });
 });
 
@@ -365,6 +402,7 @@ export const releaseTask = asyncHandler(async (req, res) => {
     { new: true }
   );
   if (!task) throw new ApiError(409, 'You can only release a task you accepted and have not submitted');
+  emitToTaskRoom(task._id, 'task:chat-closed', { taskId: String(task._id), reason: 'Worker released the task' });
   res.json({ ok: true });
 });
 
@@ -414,6 +452,7 @@ export const approveTask = asyncHandler(async (req, res) => {
     { new: true }
   );
   if (!task) throw new ApiError(409, 'There is no submitted work to approve on this task');
+  emitToTaskRoom(task._id, 'task:chat-closed', { taskId: String(task._id), reason: 'Task completed' });
 
   // Split the payment: worker earning goes to the worker's wallet, the rest stays with the platform.
   const workerUpdate = { $inc: { balance: task.workerEarning, totalEarned: task.workerEarning, completedCount: 1 } };

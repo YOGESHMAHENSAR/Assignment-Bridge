@@ -7,12 +7,21 @@ import { FileDropzone } from '../../components/ui';
 import { money, toDatetimeLocal } from '../../utils/format';
 import { hasPdfFile } from '../../utils/files';
 import { payForTask } from '../../utils/payment';
+import LocationFields from '../../components/LocationFields';
 
 export default function NewTask() {
   const { user, config } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ title: '', subject: '', pages: '', deadline: '', description: '', additionalInfo: '' });
+  const [form, setForm] = useState({
+    title: '',
+    subject: '',
+    pages: '',
+    deadline: '',
+    description: '',
+    additionalInfo: '',
+    workLocation: { name: '', latitude: '', longitude: '' },
+  });
   const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -33,7 +42,11 @@ export default function NewTask() {
     let created;
     try {
       const body = new FormData();
-      Object.entries(form).forEach(([k, v]) => v !== '' && body.append(k, k === 'deadline' ? new Date(v).toISOString() : v));
+      Object.entries(form).forEach(([k, v]) => {
+        if (k === 'workLocation' || v === '') return;
+        body.append(k, k === 'deadline' ? new Date(v).toISOString() : v);
+      });
+      body.append('workLocation', JSON.stringify(form.workLocation));
       files.forEach((f) => body.append('files', f));
       created = (await api.post('/tasks', body)).data;
     } catch (err) {
@@ -93,6 +106,13 @@ export default function NewTask() {
           <span>Additional information</span>
           <textarea rows={4} maxLength={3000} placeholder="Teacher's guidelines, references, preferred style, anything else the worker should know" value={form.additionalInfo} onChange={set('additionalInfo')} />
         </label>
+
+        <LocationFields
+          value={form.workLocation}
+          onChange={(workLocation) => setForm({ ...form, workLocation })}
+          title="Where the work is located"
+          disabled={busy}
+        />
 
         <div className="field">
           <span>Assignment files *</span>

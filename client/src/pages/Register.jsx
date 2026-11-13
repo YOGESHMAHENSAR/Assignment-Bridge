@@ -3,11 +3,19 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { errMsg } from '../api';
 import { money } from '../utils/format';
+import LocationFields from '../components/LocationFields';
 
 export default function Register() {
   const { register, config } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', role: 'tasker' });
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    role: 'tasker',
+    location: { name: '', latitude: '', longitude: '' },
+  });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -63,6 +71,11 @@ export default function Register() {
           <span>Phone (optional)</span>
           <input value={form.phone} onChange={set('phone')} />
         </label>
+        <LocationFields
+          value={form.location}
+          onChange={(location) => setForm({ ...form, location })}
+          title="Your campus location"
+        />
         <label className="field">
           <span>Password</span>
           <input type="password" required minLength={6} value={form.password} onChange={set('password')} />

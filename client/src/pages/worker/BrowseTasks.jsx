@@ -12,6 +12,7 @@ export default function BrowseTasks() {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
+  const [error, setError] = useState('');
   const [busyId, setBusyId] = useState(null);
 
   // debounce the search box
@@ -27,10 +28,11 @@ export default function BrowseTasks() {
     try {
       const { data: res } = await api.get('/tasks/available', { params: { search: query || undefined, page } });
       setData(res);
+      setError('');
     } catch (err) {
-      toast.error(errMsg(err));
+      setError(errMsg(err));
     }
-  }, [query, page, toast]);
+  }, [query, page]);
 
   useEffect(() => {
     load();
@@ -78,7 +80,19 @@ export default function BrowseTasks() {
         />
       </div>
 
-      {!data ? (
+      {error ? (
+        <div className="card">
+          <div className="alert alert-error">{error}</div>
+          {error.toLowerCase().includes('campus location') ? (
+            <>
+              <p className="muted">Set your campus name and coordinates in your profile to find requests within 2 km.</p>
+              <button className="btn btn-primary" onClick={() => navigate('/profile')}>Update profile location</button>
+            </>
+          ) : (
+            <button className="btn btn-outline" onClick={load}>Try again</button>
+          )}
+        </div>
+      ) : !data ? (
         <Loading />
       ) : data.items.length === 0 ? (
         <Empty title={query ? 'No tasks match your search' : 'No open tasks right now'}>

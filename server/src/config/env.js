@@ -12,6 +12,12 @@ const port = num(process.env.PORT, 5000);
 const nodeEnv = process.env.NODE_ENV || 'development';
 const taskPrice = num(process.env.TASK_PRICE, 100);
 const workerEarning = num(process.env.WORKER_EARNING, 50);
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || '';
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
+
+if (Boolean(vapidPublicKey) !== Boolean(vapidPrivateKey)) {
+  throw new Error('VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must both be set for web push');
+}
 
 if (workerEarning > taskPrice) {
   throw new Error('WORKER_EARNING cannot be greater than TASK_PRICE');
@@ -33,6 +39,11 @@ const env = {
     .map((s) => s.trim().replace(/\/+$/, '').toLowerCase())
     .filter(Boolean),
   serverUrl: (process.env.SERVER_URL || `http://localhost:${port}`).replace(/\/$/, ''),
+  vapid: {
+    publicKey: vapidPublicKey,
+    privateKey: vapidPrivateKey,
+    subject: process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
+  },
 
   taskPrice,
   workerEarning,
@@ -63,5 +74,6 @@ env.cloudinaryEnabled = Boolean(
 );
 // Demo payments are only ever allowed outside production.
 env.mockPayments = !env.razorpayEnabled && !env.isProd;
+env.webPushEnabled = Boolean(vapidPublicKey && vapidPrivateKey);
 
 export default env;

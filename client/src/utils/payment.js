@@ -34,7 +34,7 @@ async function collectPayment({ order, task, user }) {
       currency: order.currency,
       order_id: order.id,
       name: 'Assignment Bridge',
-      description: task.title,
+      description: `${task.title} · ${task.workLocation?.name || 'Work location not provided'}`,
       prefill: { name: user.name, email: user.email, contact: user.phone || '' },
       theme: { color: '#4f46e5' },
       handler: resolve,

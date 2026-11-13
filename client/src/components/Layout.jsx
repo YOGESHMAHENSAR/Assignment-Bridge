@@ -1,5 +1,6 @@
 import { NavLink, Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import PushNotificationControl from './PushNotificationControl';
 
 const NAV = {
   tasker: [
@@ -39,6 +40,7 @@ export default function Layout() {
               </NavLink>
             ))}
           </nav>
+          {user.role !== 'admin' && <PushNotificationControl />}
           <div className="topbar-user">
             <Link to="/profile" className="user-chip">
               <span className="avatar">{user.name.charAt(0).toUpperCase()}</span>

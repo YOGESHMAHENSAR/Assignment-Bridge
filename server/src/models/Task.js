@@ -1,5 +1,28 @@
 import mongoose from 'mongoose';
 
+const locationSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true, maxlength: 120 },
+    point: {
+      type: {
+        type: String,
+        enum: ['Point'],
+        required: true,
+        default: 'Point',
+      },
+      coordinates: {
+        type: [Number],
+        required: true,
+        validate: {
+          validator: (coordinates) => coordinates.length === 2,
+          message: 'Location coordinates must contain longitude and latitude',
+        },
+      },
+    },
+  },
+  { _id: false }
+);
+
 export const TASK_STATUS = [
   'pending_payment', // created, tasker has not paid yet (hidden from workers)
   'open', // paid, visible to workers
@@ -40,6 +63,7 @@ const taskSchema = new mongoose.Schema(
     deadline: { type: Date },
     files: [fileSchema], // tasker's attachments
 
+    workLocation: { type: locationSchema, required: true },
     tasker: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     worker: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
     ignoredBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
@@ -86,5 +110,20 @@ const taskSchema = new mongoose.Schema(
 );
 
 taskSchema.index({ status: 1, createdAt: -1 });
+taskSchema.index({ 'workLocation.point': '2dsphere' });
+taskSchema.set('toJSON', {
+  transform: (_doc, ret) => {
+    if (ret.workLocation?.point) delete ret.workLocation.point;
+    delete ret.__v;
+    return ret;
+  },
+});
+taskSchema.set('toObject', {
+  transform: (_doc, ret) => {
+    if (ret.workLocation?.point) delete ret.workLocation.point;
+    delete ret.__v;
+    return ret;
+  },
+});
 
 export default mongoose.model('Task', taskSchema);

@@ -7,6 +7,7 @@ import { FileDropzone, FileList, Loading, StatusBadge, Stars, Empty } from '../c
 import { dateTime, deadlineInfo, money } from '../utils/format';
 import { hasPdfFile } from '../utils/files';
 import { payForTask } from '../utils/payment';
+import TaskChat from '../components/TaskChat';
 
 const TEXT = { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
 
@@ -70,6 +71,8 @@ export default function TaskDetail() {
   const latest = submissions[submissions.length - 1];
   const hasAssignmentPdf = hasPdfFile(task.files);
   const canEditRequest = isTasker && ['pending_payment', 'open'].includes(task.status) && !task.worker;
+  const canViewChat = Boolean(task.worker && task.acceptedAt && (isTasker || mineAsWorker));
+  const chatOpen = ['accepted', 'submitted', 'revision'].includes(task.status);
 
   /* ---- actions ---- */
   const payNow = () =>
@@ -136,6 +139,15 @@ export default function TaskDetail() {
             <FileList files={task.files} />
           </section>
 
+          {canViewChat && (
+            <TaskChat
+              taskId={task._id}
+              userId={user._id}
+              peerName={isTasker ? task.worker.name : task.tasker.name}
+              isOpen={chatOpen}
+            />
+          )}
+
           {task.revisionNote && ['revision'].includes(task.status) && (
             <section className="card note-card">
               <h3>Revision requested</h3>
@@ -187,6 +199,12 @@ export default function TaskDetail() {
               <dd className={dl?.urgent ? 'urgent' : ''}>
                 {task.deadline ? `${dateTime(task.deadline)} (${dl.text})` : 'No deadline'}
               </dd>
+              {task.workLocation?.name && (
+                <>
+                  <dt>Work location</dt>
+                  <dd>{task.workLocation.name}</dd>
+                </>
+              )}
               {(isWorker || isAdmin) && task.tasker && (
                 <>
                   <dt>Posted by</dt>

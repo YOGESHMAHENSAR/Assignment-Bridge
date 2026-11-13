@@ -20,6 +20,7 @@ export default function TaskCard({ task, amount, amountLabel, showStatus = true,
           <div className="meta">
             {task.subject && <span className="chip">{task.subject}</span>}
             {task.pages ? <span>{task.pages} pages</span> : null}
+            {task.workLocation?.name && <span>{task.workLocation.name}</span>}
             {task.files?.length ? <span>{task.files.length} file{task.files.length > 1 ? 's' : ''}</span> : null}
             {person && <span>{showPerson === 'tasker' ? 'By' : 'Worker:'} {person.name}</span>}
           </div>
